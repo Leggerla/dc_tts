@@ -8,6 +8,7 @@ https://www.github.com/kyubyong/dc_tts
 from __future__ import print_function
 
 import os
+from time import time
 
 from hyperparams import Hyperparams as hp
 import numpy as np
@@ -20,7 +21,7 @@ from tqdm import tqdm
 
 def synthesize():
     # Load data
-    L = load_data("synthesize")
+    L, texts_len = load_data("synthesize")
 
     # Load graph
     g = Graph(mode="synthesize"); print("Graph loaded")
@@ -44,6 +45,7 @@ def synthesize():
         ## mel
         Y = np.zeros((len(L), hp.max_T, hp.n_mels), np.float32)
         prev_max_attentions = np.zeros((len(L),), np.int32)
+        start = time()
         for j in tqdm(range(hp.max_T)):
             _gs, _Y, _max_attentions, _alignments = \
                 sess.run([g.global_step, g.Y, g.max_attentions, g.alignments],
@@ -52,21 +54,27 @@ def synthesize():
                           g.prev_max_attentions: prev_max_attentions})
             Y[:, j, :] = _Y[:, j, :]
             prev_max_attentions = _max_attentions[:, j]
+        M_sec = time() - start
 
         # Get magnitude
         Z = sess.run(g.Z, {g.Y: Y})
 
         # Generate wav files
         if not os.path.exists(hp.sampledir): os.makedirs(hp.sampledir)
+        N_sec = 0
         for i, mag in enumerate(Z):
             print("Working on file", i+1)
             os.makedirs(hp.sampledir+"mags", exist_ok=True)
             np.save(hp.sampledir + "mags/{}.npy".format(i+1), mag)
+            
+            start = time()
             wav = spectrogram2wav(mag)
+            N_sec += time() - start
+            
             write(hp.sampledir + "/{}.wav".format(i+1), hp.sr, wav)
+            
+        print ("{} text_to_mel seconds".format(M_sec), "{} mel_to_wav seconds".format(N_sec), "{} characters".format(texts_len))
 
 if __name__ == '__main__':
     synthesize()
     print("Done")
-
-
